@@ -138,3 +138,31 @@ td {
   border-bottom: 1px solid #eef1f4;
   text-align: left;
 }
+
+.transfer-controls {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.transfer-controls select {
+  padding: 5px 8px;
+  border: 1px solid #cbd2d9;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.transfer-controls button,
+td > button {
+  padding: 5px 12px;
+  border: 1px solid #cbd2d9;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.transfer-controls button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

@@ -1,4 +1,4 @@
-import type { BattenDetail, BattenSummary, LoadResult } from './types';
+import type { BattenDetail, BattenSummary, LoadResult, TransferResult } from './types';
 
 // 浏览器内为空串（相对路径，经 vite 代理）；Vitest 下为真实 API 地址
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '';
@@ -28,4 +28,14 @@ export function submitLoad(battenId: string, pieceId: string, weightGrams: numbe
     method: 'POST',
     body: JSON.stringify({ piece_id: pieceId, weight_grams: weightGrams }),
   });
+}
+
+export function transferLoad(battenId: string, pieceId: string, targetBattenId: string) {
+  return request<TransferResult>(
+    `/api/battens/${encodeURIComponent(battenId)}/loads/${encodeURIComponent(pieceId)}/transfer`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ target_batten_id: targetBattenId }),
+    },
+  );
 }

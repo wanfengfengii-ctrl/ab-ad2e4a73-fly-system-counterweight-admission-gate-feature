@@ -211,4 +211,64 @@ describe('吊杆配重装载页（真实接口反馈）', () => {
     expect(db.total_grams).toBe(12000);
     expect(db.remaining_grams).toBe(18000);
   });
+
+  it('已登记配重片可从页面转移到另一根吊杆，两杆数据同步刷新', async () => {
+    // 通过真实接口预置：G-01 上已登记一片 20000 克
+    const setup = await fetch(`${BASE}/api/battens/G-01/loads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ piece_id: 'CW-MOVE-1', weight_grams: 20000 }),
+    });
+    expect(setup.status).toBe(201);
+    const before = await dbBatten('G-01');
+    const createdAt = before.loads[0].created_at;
+
+    const user = await renderLoaded();
+
+    // 当前吊杆（G-01）明细中对该片点击“转移”，选择目标吊杆并确认
+    const row = (await screen.findByRole('cell', { name: 'CW-MOVE-1' })).closest('tr');
+    expect(row).not.toBeNull();
+    await user.click(within(row as HTMLElement).getByRole('button', { name: '转移' }));
+    await user.selectOptions(screen.getByLabelText('目标吊杆'), 'G-02');
+    await user.click(screen.getByRole('button', { name: '确认转移' }));
+
+    // 页面反馈给出配重片去向
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('已从 G-01 转移到 G-02');
+    expect(status).toHaveTextContent('G-02 剩余 30000 克');
+
+    // 源吊杆明细刷新：该片从列表消失，总重归零
+    await waitFor(() =>
+      expect(screen.queryByRole('cell', { name: 'CW-MOVE-1' })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('total')).toHaveTextContent(/^0 克$/);
+    expect(screen.getByTestId('remaining')).toHaveTextContent('30000 克');
+
+    // 总览中目标吊杆的总重 / 剩余量同步刷新
+    const g02Card = screen.getByRole('button', { name: /G-02/ });
+    await waitFor(() =>
+      expect(within(g02Card).getByText('总重 20000 克')).toBeInTheDocument(),
+    );
+    expect(within(g02Card).getByText('剩余 30000 克')).toBeInTheDocument();
+
+    // 切到目标吊杆，明细中出现该片
+    await user.click(g02Card);
+    expect(await screen.findByRole('cell', { name: 'CW-MOVE-1' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('total')).toHaveTextContent('20000 克'),
+    );
+    expect(screen.getByTestId('remaining')).toHaveTextContent('30000 克');
+
+    // 与数据库直接核对：源杆已空，目标杆持有该片且重量、登记时间保持原值
+    const source = await dbBatten('G-01');
+    expect(source.total_grams).toBe(0);
+    expect(source.loads).toHaveLength(0);
+    const target = await dbBatten('G-02');
+    expect(target.total_grams).toBe(20000);
+    expect(target.remaining_grams).toBe(30000);
+    expect(target.loads).toHaveLength(1);
+    expect(target.loads[0].piece_id).toBe('CW-MOVE-1');
+    expect(target.loads[0].weight_grams).toBe(20000);
+    expect(target.loads[0].created_at).toBe(createdAt);
+  });
 });

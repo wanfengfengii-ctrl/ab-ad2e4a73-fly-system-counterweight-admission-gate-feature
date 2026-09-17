@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
-import { fetchBatten, fetchBattens, submitLoad } from './api';
+import { fetchBatten, fetchBattens, submitLoad, transferLoad } from './api';
 import type { BattenDetail, BattenSummary } from './types';
 
 interface Feedback {
@@ -15,6 +15,10 @@ export default function App() {
   const [weight, setWeight] = useState('');
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // 正在确认转移的配重片标识及其目标吊杆
+  const [movingPiece, setMovingPiece] = useState<string | null>(null);
+  const [transferTarget, setTransferTarget] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   // 页面状态永远以数据库为准：挂载与每次登记后都重新拉取
   const refresh = useCallback(async (battenId: string) => {
@@ -32,6 +36,11 @@ export default function App() {
   useEffect(() => {
     void refresh(selected);
   }, [refresh, selected]);
+
+  // 切换吊杆时取消未确认的转移选择
+  useEffect(() => {
+    setMovingPiece(null);
+  }, [selected]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -62,6 +71,43 @@ export default function App() {
     } finally {
       setSubmitting(false);
     }
+    await refresh(selected);
+  }
+
+  function startTransfer(piece: string) {
+    setFeedback(null);
+    setTransferTarget(
+      battens.find((b) => b.batten_id !== selected)?.batten_id ?? '',
+    );
+    setMovingPiece(piece);
+  }
+
+  async function handleTransfer(piece: string) {
+    if (!transferTarget) return;
+    setFeedback(null);
+    setTransferring(true);
+    try {
+      const { body } = await transferLoad(selected, piece, transferTarget);
+      if (body.accepted) {
+        // 反馈中给出配重片去向与两根吊杆的最新余量
+        const summary = [body.from, body.to]
+          .filter((s): s is BattenSummary => Boolean(s))
+          .map((s) => `${s.batten_id} 剩余 ${s.remaining_grams} 克`)
+          .join('，');
+        setFeedback({
+          kind: 'success',
+          text: summary ? `${body.message}：${summary}` : body.message,
+        });
+      } else {
+        setFeedback({ kind: 'error', text: `已拒绝：${body.message}` });
+      }
+    } catch {
+      setFeedback({ kind: 'error', text: '网络错误，无法联系装载裁决服务' });
+    } finally {
+      setTransferring(false);
+      setMovingPiece(null);
+    }
+    // 无论成败都重新拉取：两根吊杆的总重、余量与明细以数据库为准
     await refresh(selected);
   }
 
@@ -157,6 +203,7 @@ export default function App() {
                 <tr>
                   <th>配重片标识</th>
                   <th>重量（克）</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -164,6 +211,46 @@ export default function App() {
                   <tr key={load.load_id}>
                     <td>{load.piece_id}</td>
                     <td>{load.weight_grams}</td>
+                    <td>
+                      {movingPiece === load.piece_id ? (
+                        <span className="transfer-controls">
+                          <select
+                            aria-label="目标吊杆"
+                            value={transferTarget}
+                            onChange={(e) => setTransferTarget(e.target.value)}
+                          >
+                            {battens
+                              .filter((b) => b.batten_id !== detail.batten_id)
+                              .map((b) => (
+                                <option key={b.batten_id} value={b.batten_id}>
+                                  {b.batten_id}
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={transferring || !transferTarget}
+                            onClick={() => void handleTransfer(load.piece_id)}
+                          >
+                            确认转移
+                          </button>
+                          <button
+                            type="button"
+                            disabled={transferring}
+                            onClick={() => setMovingPiece(null)}
+                          >
+                            取消
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startTransfer(load.piece_id)}
+                        >
+                          转移
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

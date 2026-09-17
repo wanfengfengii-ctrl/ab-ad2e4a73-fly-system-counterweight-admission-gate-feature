@@ -33,6 +33,8 @@ WEB_PORT=9000 API_PORT=9001 docker compose up --build
   等一律 422 拒绝，不做隐式转换。
 - 接纳条件：当前总重 + 本片重量 ≤ 核定值（恰好相等允许）。
 - 配重片标识全库唯一，只能成功一次；失败请求不写入数据库。
+- 已登记配重片可转移到另一根吊杆：只更新装载记录的归属，原始重量与登记时间保留；
+  目标余量不足、目标不存在或与源相同时明确拒绝，数据库保持原归属。
 - `POST /api/reset`：清空装载记录、恢复两根空吊杆，供每个验收场景开始前调用。
 
 ## 接口摘要
@@ -42,11 +44,13 @@ WEB_PORT=9000 API_PORT=9001 docker compose up --build
 | GET | `/api/battens` | 两根吊杆的总重 / 剩余量 |
 | GET | `/api/battens/{id}` | 单杆明细（含已接纳配重片列表） |
 | POST | `/api/battens/{id}/loads` | 逐片装载裁决，体：`{"piece_id": "...", "weight_grams": 20000}` |
+| POST | `/api/battens/{id}/loads/{piece_id}/transfer` | 配重片转移到另一根吊杆，体：`{"target_batten_id": "G-02"}` |
 | POST | `/api/reset` | 恢复两根空吊杆 |
 
 拒绝响应均带 `accepted: false` 与 `reason`：
 `INVALID_WEIGHT`（422）、`INVALID_INPUT`（422）、`PIECE_ID_EXISTS`（409）、
-`OVER_CAPACITY`（409）、`BATTEN_NOT_FOUND`（404）。
+`OVER_CAPACITY`（409）、`SAME_BATTEN`（409）、`PIECE_NOT_ON_SOURCE`（409，
+配重片当前位置已变化）、`BATTEN_NOT_FOUND`（404）。
 
 ## 测试（均为真实接口 / 真实数据库，无假接口）
 
