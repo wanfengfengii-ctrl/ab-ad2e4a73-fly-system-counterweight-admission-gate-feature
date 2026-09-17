@@ -22,6 +22,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # 清洁启动时 uvicorn 导入、建表与播种需要时间；容器 started 不代表已在监听。
+    # 用健康检查把“已可服务”显式化，web 与其上的验收会等到接口真正可达再放行。
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
   web:
     build: ./web
@@ -32,7 +42,8 @@ services:
     ports:
       - "${WEB_PORT:-5173}:5173"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   db_data:
