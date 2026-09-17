@@ -1,11 +1,12 @@
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine, get_db
@@ -15,6 +16,31 @@ from .schemas import LoadCreate, TransferCreate
 MIN_WEIGHT_GRAMS = 100
 MAX_WEIGHT_GRAMS = 25000
 FIXTURE_BATTENS = {"G-01": 30000, "G-02": 50000}
+# 清洁首启时 db 健康检查可能在其 initdb 引导（仅 unix socket 的临时服务）
+# 阶段就放行 api；此时 TCP 尚未可连。启动时有限等待，避免一次连不上就退出。
+DB_WAIT_TIMEOUT_SECONDS = 60
+DB_WAIT_INTERVAL_SECONDS = 1
+
+
+def wait_for_database() -> None:
+    """等待数据库可通过 TCP 连接，超时后抛出最后一次连接错误。"""
+    deadline = time.monotonic() + DB_WAIT_TIMEOUT_SECONDS
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return
+        except OperationalError:
+            if time.monotonic() >= deadline:
+                raise
+            print(
+                f"数据库尚不可连，第 {attempt} 次重试，"
+                f"{DB_WAIT_INTERVAL_SECONDS} 秒后再试……",
+                flush=True,
+            )
+            time.sleep(DB_WAIT_INTERVAL_SECONDS)
 
 
 def ensure_fixture_battens(db: Session) -> None:
@@ -30,6 +56,7 @@ def ensure_fixture_battens(db: Session) -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    wait_for_database()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         ensure_fixture_battens(db)
