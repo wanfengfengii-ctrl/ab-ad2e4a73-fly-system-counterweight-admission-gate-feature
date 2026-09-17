@@ -101,6 +101,80 @@ h1 {
   border: 1px solid #fecaca;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.transfer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.transfer-bar select {
+  padding: 6px 8px;
+  border: 1px solid #cbd2d9;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.transfer-bar button {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.transfer-bar button.secondary {
+  background: #fff;
+  color: #374151;
+  border: 1px solid #cbd2d9;
+}
+
+.transfer-bar button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.link-button {
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.created-at {
+  color: #6b7280;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .detail {
   margin-top: 20px;
   padding: 16px;

@@ -211,4 +211,91 @@ describe('吊杆配重装载页（真实接口反馈）', () => {
     expect(db.total_grams).toBe(12000);
     expect(db.remaining_grams).toBe(18000);
   });
+
+  it('在页面把配重片转移到另一根吊杆，源与目标数据同步刷新', async () => {
+    const user = await renderLoaded();
+    await submitPiece(user, 'CW-WEB-MOVE', '12000');
+    await screen.findByRole('status');
+
+    // 当前吊杆明细中为每片提供“转移”，点击后选择目标并确认
+    await user.click(
+      await screen.findByRole('button', { name: '转移 CW-WEB-MOVE' }),
+    );
+    const targetSelect = screen.getByLabelText('目标吊杆');
+    await user.selectOptions(targetSelect, 'G-02');
+    await user.click(screen.getByRole('button', { name: '确认转移' }));
+
+    // 给出配重片去向
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('已从 G-01 转移到 G-02'),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('CW-WEB-MOVE');
+
+    // 源吊杆刷新：片子已移走（用首尾锚定，避免 '12000 克' 子串误匹配 '0 克'）
+    await waitFor(() =>
+      expect(screen.getByTestId('total').textContent).toMatch(/^0 克$/),
+    );
+    expect(screen.getByTestId('remaining').textContent).toMatch(/^30000 克$/);
+    await waitFor(() =>
+      expect(screen.getByText('暂无已接纳配重片')).toBeInTheDocument(),
+    );
+
+    // 切到目标吊杆核对页面数据
+    await user.selectOptions(screen.getByLabelText('选择吊杆'), 'G-02');
+    await waitFor(() =>
+      expect(screen.getByTestId('total').textContent).toMatch(/^12000 克$/),
+    );
+    expect(screen.getByTestId('remaining').textContent).toMatch(/^38000 克$/);
+    expect(screen.getByRole('cell', { name: 'CW-WEB-MOVE' })).toBeInTheDocument();
+
+    // 与数据库直接核对源与目标
+    const srcDb = await dbBatten('G-01');
+    const dstDb = await dbBatten('G-02');
+    expect(srcDb.total_grams).toBe(0);
+    expect(srcDb.loads).toHaveLength(0);
+    expect(dstDb.total_grams).toBe(12000);
+    expect(dstDb.remaining_grams).toBe(38000);
+    expect(dstDb.loads.map((l: { piece_id: string }) => l.piece_id)).toEqual([
+      'CW-WEB-MOVE',
+    ]);
+  });
+
+  it('目标吊杆容量不足时页面转移被拒绝，源杆归属不变', async () => {
+    const user = await renderLoaded();
+    await submitPiece(user, 'CW-WEB-BIG', '20000');
+    await screen.findByRole('status');
+
+    // 直接通过真实接口把目标吊杆装到仅剩 10000 克
+    for (const id of ['CW-FILL-1', 'CW-FILL-2']) {
+      const res = await fetch(`${BASE}/api/battens/G-02/loads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ piece_id: id, weight_grams: 20000 }),
+      });
+      expect(res.status).toBe(201);
+    }
+
+    await user.click(
+      await screen.findByRole('button', { name: '转移 CW-WEB-BIG' }),
+    );
+    await user.selectOptions(screen.getByLabelText('目标吊杆'), 'G-02');
+    await user.click(screen.getByRole('button', { name: '确认转移' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('已拒绝');
+    expect(alert).toHaveTextContent('超出核定');
+
+    // 刷新后源杆仍持有该片，总重不变
+    await waitFor(() => expect(screen.getByTestId('total')).toHaveTextContent('20000 克'));
+    expect(screen.getByTestId('remaining')).toHaveTextContent('10000 克');
+    expect(screen.getByRole('cell', { name: 'CW-WEB-BIG' })).toBeInTheDocument();
+
+    const srcDb = await dbBatten('G-01');
+    const dstDb = await dbBatten('G-02');
+    expect(srcDb.total_grams).toBe(20000);
+    expect(srcDb.loads.map((l: { piece_id: string }) => l.piece_id)).toEqual([
+      'CW-WEB-BIG',
+    ]);
+    expect(dstDb.total_grams).toBe(40000);
+  });
 });

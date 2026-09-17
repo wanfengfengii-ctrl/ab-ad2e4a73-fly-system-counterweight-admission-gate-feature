@@ -3,6 +3,10 @@
 剧场装台场景：多名技师可能在吊杆两端同时登记配重片。本系统保证**逐片装载的原子裁决**——
 任何并发下合计重量都不会突破吊杆核定值，配重片标识全库只能成功登记一次，被拒绝的请求绝不落库。
 
+装台调整时还可把**已登记的配重片在吊杆间转移**：不必先清空或重新使用标识，
+只修改现有装载记录的归属，原始重量与登记时间原样保留；相反方向的并发转移按固定顺序加锁，
+不会死锁，也不会造成超载。
+
 ## 架构
 
 - **web**（React + Vite）：选择预置吊杆，录入配重片唯一标识与整数克重量，展示当前总重、
@@ -42,17 +46,28 @@ WEB_PORT=9000 API_PORT=9001 docker compose up --build
 | GET | `/api/battens` | 两根吊杆的总重 / 剩余量 |
 | GET | `/api/battens/{id}` | 单杆明细（含已接纳配重片列表） |
 | POST | `/api/battens/{id}/loads` | 逐片装载裁决，体：`{"piece_id": "...", "weight_grams": 20000}` |
+| POST | `/api/battens/{id}/transfers` | 转移已登记配重片，体：`{"piece_id": "...", "target_batten_id": "G-02"}` |
 | POST | `/api/reset` | 恢复两根空吊杆 |
+
+转移说明：
+
+- 只更新现有装载记录的 `batten_id`，`weight_grams` 与 `created_at` 不变，不新建记录。
+- 服务按吊杆 id 升序固定顺序 `SELECT ... FOR UPDATE` 锁定源、目标两杆，
+  然后在同一事务内确认配重片仍属于源杆并校验目标余量；拒绝时回滚，归属保持原样。
+- 成功响应直接给出两杆最新快照（`source` / `target`）与配重片去向。
 
 拒绝响应均带 `accepted: false` 与 `reason`：
 `INVALID_WEIGHT`（422）、`INVALID_INPUT`（422）、`PIECE_ID_EXISTS`（409）、
-`OVER_CAPACITY`（409）、`BATTEN_NOT_FOUND`（404）。
+`OVER_CAPACITY`（409）、`BATTEN_NOT_FOUND`（404）；
+转移另有 `SAME_BATTEN`（422）、`PIECE_NOT_FOUND`（404）、
+`PIECE_MOVED`（409，配重片已被其他终端移走，文案含“当前位置已变化”）。
 
 ## 测试（均为真实接口 / 真实数据库，无假接口）
 
 ```bash
 # pytest：真实并发事务（两个 20000 克并发投向空 G-01，必须仅一笔成功，
-# 总重固定 20000 克、剩余量固定 10000 克）
+# 总重固定 20000 克、剩余量固定 10000 克；另含两笔相反方向并发转移，
+# 结束后两杆均不超限且配重片总重守恒）
 docker compose exec api pytest -v
 
 # Vitest：页面交互 + 真实接口反馈
