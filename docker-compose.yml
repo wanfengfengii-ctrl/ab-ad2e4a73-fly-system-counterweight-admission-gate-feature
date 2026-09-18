@@ -8,7 +8,13 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rigging -d rigging"]
+      # 必须显式走 TCP：postgres 官方镜像首次初始化时会启动一个
+      # listen_addresses=''（仅 Unix 套接字）的临时服务器执行 initdb，
+      # 此时不带 -h 的 pg_isready 经套接字探测会误报“accepting connections”，
+      # 让 api 在真实服务器尚未监听 TCP 前启动并连接失败；清洁首启失败、
+      # 卷已存在的复跑因不再初始化而侥幸通过。指定 127.0.0.1 后，引导期
+      # TCP 拒绝连接（退出码 2），只有正式服务器就绪才放行。
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U rigging -d rigging"]
       interval: 2s
       timeout: 3s
       retries: 20
